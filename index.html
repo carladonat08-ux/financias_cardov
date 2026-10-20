@@ -217,7 +217,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="recDia">Día del mes para pasar al Excel</label><input id="recDia" type="number" min="1" max="31" inputmode="numeric"></div>
     <p class="err" id="cfgErr" role="alert"></p>
     <button class="btn" id="cfgSave">Guardar ajustes</button>
-    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio.</p>
+    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 3</p>
   </section>
 </div>
 
@@ -280,7 +280,7 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 const fmtDate=s=>{const [y,m,d]=s.split("-");return d+"/"+m+"/"+y;};
 const uid=()=>(crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
 function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2400);}
-function parseAmount(s){s=String(s).trim().replace(/\s|€/g,"");if(!s)return NaN;if(s.includes(",")){s=s.replace(/\./g,"").replace(",",".");}else if((s.match(/\./g)||[]).length>1){s=s.replace(/\./g,"");}return Number(s);}
+function parseAmount(s){s=String(s).trim().replace(/\s|€/g,"");if(!s)return NaN;if(s.includes(",")){s=s.replace(/\./g,"").replace(",",".");}else if((s.match(/\./g)||[]).length>1||/^\d{1,3}\.\d{3}$/.test(s)){s=s.replace(/\./g,"");}return Number(s);}
 function tipoDe(cat){if(cfg().ingreso.includes(cat))return"Ingreso";if(cfg().extra.includes(cat))return"Extraordinario";return"Gasto";}
 const daysSince=t=>t?Math.floor((Date.now()-new Date(t).getTime())/864e5):null;
 function downloadFile(name,text,type){const b=new Blob([text],{type});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1000);}
@@ -359,8 +359,13 @@ function renderSummary(){
     const salHtml=sal===null?'<button type="button" class="s" data-setsaldo style="border:0;background:none;padding:6px 0 0;text-align:left;color:var(--accent);font-weight:600">+ Poner saldo</button>'
       :'<span class="s" style="padding-top:6px;border-top:1px dashed var(--line);margin-top:6px">Saldo: <b style="color:var(--ink)'+(sal<0?';color:var(--out)':'')+'">'+eur(sal)+'</b></span>';
     if(a==="a4"){c.innerHTML='<span class="n">'+esc(nom(a))+' · gasto extra</span><span class="big num">'+eur(s[a].out)+'</span><span class="s">este mes'+(s[a].in?' · entró '+eur(s[a].in):'')+'</span>'+salHtml;
-      if(sal!==null){c.innerHTML='<span class="n">'+esc(nom(a))+' · saldo</span><span class="big num'+(sal<0?' neg':'')+'">'+eur(sal)+'</span><span class="s">gasto extra este mes: '+eur(s[a].out)+'</span>';}}
+      if(sal!==null){c.innerHTML='<span class="n">'+esc(nom(a))+' · saldo hoy</span><span class="big num'+(sal<0?' neg':'')+'">'+eur(sal)+'</span><span class="s">gasto extra este mes: '+eur(s[a].out)+'</span>';}}
     else{const recib=fijo(a,vp)+s[a].in,queda=recib-s[a].out,pct=recib>0?Math.min(100,s[a].out/recib*100):(s[a].out>0?100:0);
+      if(sal!==null){
+        c.innerHTML='<span class="n">'+esc(nom(a))+' · saldo hoy</span><span class="big num'+(sal<0?' neg':'')+'">'+eur(sal)+'</span>'+
+          '<span class="s">este mes: gastado '+eur(s[a].out)+(recib?' de '+eur(recib)+' · te queda '+eur(queda):'')+'</span>'+
+          (recib?'<div class="bar'+(queda<0?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>':'');
+      }else
       c.innerHTML='<span class="n">'+esc(nom(a))+' · te queda</span><span class="big num'+(queda<0?' neg':'')+'">'+eur(queda)+'</span><span class="s">gastado '+eur(s[a].out)+' de '+eur(recib)+'</span><div class="bar'+(queda<0?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>'+salHtml;}
     const sb=c.querySelector("[data-setsaldo]");if(sb)sb.onclick=()=>{showTab("p-cfg");setTimeout(()=>$("saldoBox").scrollIntoView({block:"start",behavior:"smooth"}),50);};
     box.appendChild(c);});
@@ -377,6 +382,10 @@ function renderBanner(){
   const due=new Date(now.getFullYear(),now.getMonth(),rd);if(now<due)due.setMonth(due.getMonth()-1);
   const exportedSinceDue=S.lastExport&&new Date(S.lastExport)>=due;
   const msgs=[];
+  const sinSaldo=SLOTS.every(a=>saldoDe(a)===null);
+  if(sinSaldo&&storageOk){b.innerHTML='<div><b>¿Cuánto tienes ahora?</b> Pon el saldo actual de tus cuentas y la app te enseñará tu dinero real en cada una.</div>';
+    const acts=document.createElement("div");acts.className="acts";const go=document.createElement("button");go.className="btn small";go.textContent="Poner mi saldo";
+    go.onclick=()=>{showTab("p-cfg");setTimeout(()=>$("saldoBox").scrollIntoView({block:"start",behavior:"smooth"}),50);};acts.appendChild(go);b.appendChild(acts);b.hidden=false;return;}
   if(pend&&!exportedSinceDue)
     msgs.push("Toca pasar al Excel: tienes <b>"+pend+"</b> movimientos pendientes.");
   const dB=daysSince(S.lastBackup);
@@ -544,7 +553,15 @@ function renderAll(){renderSummary();renderList();renderXls();renderBanner();}
 window.addEventListener("storage",e=>{if(e.key===KEY){load();renderForm();renderAll();}});
 renderForm();renderAll();fillCfg();
 
-if("serviceWorker" in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(()=>{});}
+/* actualizaciones: busca versión nueva al abrir y al volver a la app; si la hay, recarga una vez */
+if("serviceWorker" in navigator&&location.protocol==="https:"){
+  let hadCtrl=!!navigator.serviceWorker.controller,reloaded=false;
+  navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{
+    reg.update().catch(()=>{});
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)reg.update().catch(()=>{});});
+  }).catch(()=>{});
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadCtrl&&!reloaded){reloaded=true;location.reload();}hadCtrl=true;});
+}
 })();
 </script>
 </body>

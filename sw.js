@@ -1,5 +1,5 @@
 // Guarda la app en el móvil para que funcione sin internet. No toca tus datos.
-const CACHE = "mis-cuentas-v1";
+const CACHE = "mis-cuentas-v2";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {

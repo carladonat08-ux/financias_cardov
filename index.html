@@ -120,6 +120,8 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
 .fx{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:center;font-size:.85rem}
 .fx .h{font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .fx input{padding:8px;font-size:14px}
+.fixrow label{display:flex;flex-direction:column;gap:3px}
+.fixrow select{width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:9px 8px;font:inherit;font-size:15px}
 .sep{border:0;border-top:1px solid var(--line);margin:4px 0}
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);z-index:5}
 .tabs .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
@@ -191,14 +193,23 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <h2>Ajustes</h2>
     <div class="banner" style="background:var(--accent-soft);color:var(--ink)"><div><b>¿Tienes un archivo de ajustes?</b> Cárgalo y todo se pone como en tu Excel, sin escribir nada.</div>
       <div class="acts"><button class="btn small" id="cfgLoadBtn">Cargar archivo de ajustes</button></div></div>
-    <p class="muted" style="margin:0;font-size:.9rem">O escríbelos a mano. Usa los mismos nombres que en tu Excel (hoja <b>Config</b>).</p>
+    <div class="field" id="saldoBox"><span class="lbl">Tu saldo actual</span>
+      <span class="muted" style="font-size:.8rem">Copia lo que te marca ahora cada app del banco (y lo que llevas en la cartera). A partir de aquí la app suma y resta sola.</span>
+      <div class="fx" id="saldoCfg" style="grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)"></div>
+      <div class="field"><label class="lbl" for="saldoFecha">Fecha de estos saldos</label><input id="saldoFecha" type="date"></div>
+      <span class="muted" style="font-size:.8rem">Lo que apuntes a partir de ahora se descuenta de este saldo. Lo que ya habías apuntado antes se da por incluido.</span>
+      <div class="acts"><button type="button" class="btn small" id="saldoSave">Guardar saldos</button></div></div>
+    <hr class="sep">
+    <p class="muted" style="margin:0;font-size:.9rem">Los demás ajustes, a mano. Usa los mismos nombres que en tu Excel (hoja <b>Config</b>).</p>
     <div class="field"><span class="lbl">Tus cuentas</span><div class="fx" id="accCfg" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1.4fr) minmax(0,1.3fr)"></div>
       <span class="muted" style="font-size:.8rem">Las tarjetas 1 y 2 van a los bloques de las columnas A y G de tu hoja Registro; efectivo y banco, al bloque de la columna M.</span></div>
     <div class="field"><label class="lbl" for="cGasto">Categorías de gasto habitual (una por línea)</label><textarea id="cGasto"></textarea></div>
     <div class="field"><label class="lbl" for="cExtra">Categorías de gasto extraordinario</label><textarea id="cExtra" style="min-height:70px"></textarea></div>
     <div class="field"><label class="lbl" for="cIng">Categorías de entrada de dinero</label><textarea id="cIng" style="min-height:70px"></textarea></div>
-    <div class="field"><span class="lbl">Dinero fijo que entra cada mes</span><div class="fx" id="fx"></div>
-      <span class="muted" style="font-size:.8rem">Sirve para calcular "te queda" en cada cuenta. "Hasta" vacío = siempre.</span></div>
+    <div class="field"><span class="lbl">Movimientos fijos de cada mes</span>
+      <span class="muted" style="font-size:.8rem">Nómina, cuotas, envíos entre tus cuentas… La app los suma y resta sola al empezar cada mes. Con "Hasta" vacío se repite siempre.</span>
+      <div id="fixList" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div class="acts"><button type="button" class="btn small ghost" id="fixAdd">+ Añadir fijo</button></div></div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px">
       <div class="field"><label class="lbl" for="diaIni">Tu mes empieza el día</label><input id="diaIni" type="number" min="1" max="31" inputmode="numeric"></div>
       <div class="field"><label class="lbl" for="decSep">Decimales en tu Excel</label><select id="decSep"><option value=",">Coma (12,50)</option><option value=".">Punto (12.50)</option></select></div>
@@ -235,11 +246,17 @@ const DEFCFG={
   gasto:["Supermercado","Comer fuera y cafés","Ocio","Ropa y calzado","Compras online","Transporte","Salud y farmacia","Cuidado personal","Suscripciones","Regalos","Hogar","Otros gastos"],
   extra:["Gasto extraordinario"],
   ingreso:["Ingreso extra","Devolución"],
-  fijos:{a1:{imp:0,desde:"",hasta:""},a2:{imp:0,desde:"",hasta:""},a3:{imp:0,desde:"",hasta:""}},
+  fijos:[],
+  saldos:{fecha:"",ts:"",imp:{}},
   diaIni:1, dec:",", recDia:15
 };
 const clone=o=>JSON.parse(JSON.stringify(o));
-function mergeCfg(c){const n=Object.assign(clone(DEFCFG),c||{});n.cuentas=Object.assign(clone(DEFCFG.cuentas),(c&&c.cuentas)||{});n.fijos=Object.assign(clone(DEFCFG.fijos),(c&&c.fijos)||{});return n;}
+function mergeCfg(c){const n=Object.assign(clone(DEFCFG),c||{});n.cuentas=Object.assign(clone(DEFCFG.cuentas),(c&&c.cuentas)||{});
+  /* formato antiguo {a1:{imp,desde,hasta}} -> lista de fijos */
+  if(n.fijos&&!Array.isArray(n.fijos)){const old=n.fijos;n.fijos=[];Object.keys(old).forEach(k=>{const f=old[k];if(f&&Number(f.imp)>0)n.fijos.push({nombre:"Entrada fija",imp:Number(f.imp),de:"",a:k,desde:f.desde||"",hasta:f.hasta||""});});}
+  if(!Array.isArray(n.fijos))n.fijos=[];
+  n.saldos=Object.assign({fecha:"",ts:"",imp:{}},(c&&c.saldos)||{});n.saldos.imp=Object.assign({},n.saldos.imp||{});
+  return n;}
 let S={v:1,regs:[],cfg:clone(DEFCFG),lastAcc:"a1",lastExport:null,lastBackup:null};
 let storageOk=true;
 function load(){try{const raw=localStorage.getItem(KEY);if(raw){const x=JSON.parse(raw);if(x&&Array.isArray(x.regs)){S=Object.assign(S,x);S.cfg=mergeCfg(x.cfg);}}}catch(e){storageOk=false;}
@@ -274,7 +291,17 @@ function periodOf(s){const [y,m,d]=s.split("-").map(Number);if(cfg().diaIni<=1)r
 function rangeOf(p){const y=Math.floor(p/12),m=p%12;if(cfg().diaIni<=1)return{from:new Date(y,m,1),to:new Date(y,m+1,0)};return{from:new Date(y,m-1,cfg().diaIni),to:new Date(y,m,cfg().diaIni-1)};}
 let vp=periodOf(todayISO());
 const pKey=p=>Math.floor(p/12)+"-"+pad(p%12+1);
-function fijo(acc,p){const f=cfg().fijos[acc];if(!f||!f.imp)return 0;const k=pKey(p);if(f.desde&&k<f.desde)return 0;if(f.hasta&&k>f.hasta)return 0;return Number(f.imp)||0;}
+const activo=(f,p)=>{const k=pKey(p);return !(f.desde&&k<f.desde)&&!(f.hasta&&k>f.hasta);};
+/* lo que entra fijo en una cuenta ese mes (para "te queda") */
+function fijo(acc,p){return cfg().fijos.filter(f=>f.a===acc&&activo(f,p)).reduce((s,f)=>s+(Number(f.imp)||0),0);}
+/* entra - sale fijo en una cuenta ese mes (para el saldo) */
+function fijoNeto(acc,p){return cfg().fijos.reduce((s,f)=>{if(!activo(f,p))return s;const v=Number(f.imp)||0;return s+(f.a===acc?v:0)-(f.de===acc?v:0);},0);}
+/* saldo actual = saldo que pusiste + fijos de los meses que han empezado después + lo apuntado después */
+function saldoDe(acc){const sd=cfg().saldos,v=sd.imp[acc];if(v===undefined||v===null||v===""||!sd.fecha)return null;
+  let t=Number(v)||0;const pNow=periodOf(todayISO());
+  for(let p=periodOf(sd.fecha)+1;p<=pNow;p++)t+=fijoNeto(acc,p);
+  S.regs.forEach(r=>{if(r.cuenta!==acc)return;if(r.fecha>sd.fecha||(r.fecha===sd.fecha&&(r.creado||"")>(sd.ts||""))){const a=Number(r.importe)||0;t+=tipoDe(r.categoria)==="Ingreso"?a:-a;}});
+  return Math.round(t*100)/100;}
 
 /* ===== formulario ===== */
 let stCat=null,openId=null,confirmDel=null,confirmMark=null;
@@ -328,11 +355,17 @@ function renderSummary(){
   inPeriod().forEach(r=>{const a=Number(r.importe)||0,t=tipoDe(r.categoria);if(!s[r.cuenta])return;if(t==="Ingreso")s[r.cuenta].in+=a;else s[r.cuenta].out+=a;if(t==="Gasto")hab+=a;else if(t==="Extraordinario")ext+=a;});
   const box=$("accs");box.innerHTML="";
   SLOTS.forEach(a=>{const c=document.createElement("div");c.className="acc";c.style.setProperty("--ac",SLOT_COLOR[a]);
-    if(a==="a4"){c.innerHTML='<span class="n">'+esc(nom(a))+'</span><span class="big num">'+eur(s[a].out)+'</span><span class="s">gasto extra este mes'+(s[a].in?' · entró '+eur(s[a].in):'')+'</span>';}
+    const sal=saldoDe(a);
+    const salHtml=sal===null?'<button type="button" class="s" data-setsaldo style="border:0;background:none;padding:6px 0 0;text-align:left;color:var(--accent);font-weight:600">+ Poner saldo</button>'
+      :'<span class="s" style="padding-top:6px;border-top:1px dashed var(--line);margin-top:6px">Saldo: <b style="color:var(--ink)'+(sal<0?';color:var(--out)':'')+'">'+eur(sal)+'</b></span>';
+    if(a==="a4"){c.innerHTML='<span class="n">'+esc(nom(a))+' · gasto extra</span><span class="big num">'+eur(s[a].out)+'</span><span class="s">este mes'+(s[a].in?' · entró '+eur(s[a].in):'')+'</span>'+salHtml;
+      if(sal!==null){c.innerHTML='<span class="n">'+esc(nom(a))+' · saldo</span><span class="big num'+(sal<0?' neg':'')+'">'+eur(sal)+'</span><span class="s">gasto extra este mes: '+eur(s[a].out)+'</span>';}}
     else{const recib=fijo(a,vp)+s[a].in,queda=recib-s[a].out,pct=recib>0?Math.min(100,s[a].out/recib*100):(s[a].out>0?100:0);
-      c.innerHTML='<span class="n">'+esc(nom(a))+' · te queda</span><span class="big num'+(queda<0?' neg':'')+'">'+eur(queda)+'</span><span class="s">gastado '+eur(s[a].out)+' de '+eur(recib)+'</span><div class="bar'+(queda<0?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>';}
+      c.innerHTML='<span class="n">'+esc(nom(a))+' · te queda</span><span class="big num'+(queda<0?' neg':'')+'">'+eur(queda)+'</span><span class="s">gastado '+eur(s[a].out)+' de '+eur(recib)+'</span><div class="bar'+(queda<0?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>'+salHtml;}
+    const sb=c.querySelector("[data-setsaldo]");if(sb)sb.onclick=()=>{showTab("p-cfg");setTimeout(()=>$("saldoBox").scrollIntoView({block:"start",behavior:"smooth"}),50);};
     box.appendChild(c);});
-  $("totals").innerHTML='<span>Gastos habituales: <b>'+eur(hab)+'</b></span>'+(ext?'<span>Extraordinarios: <b>'+eur(ext)+'</b></span>':'')+'<span>Sin contar los fijos de tu Excel</span>';
+  const sals=SLOTS.map(saldoDe).filter(v=>v!==null);
+  $("totals").innerHTML=(sals.length?'<span>Saldo total hoy: <b>'+eur(sals.reduce((x,y)=>x+y,0))+'</b></span>':'')+'<span>Gastos habituales del mes: <b>'+eur(hab)+'</b></span>'+(ext?'<span>Extraordinarios: <b>'+eur(ext)+'</b></span>':'');
 }
 
 /* ===== aviso de exportación y copia ===== */
@@ -433,7 +466,7 @@ $("bkFile").onchange=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
       :'<div>La copia del '+esc(new Date(x.fecha).toLocaleDateString("es-ES"))+' tiene <b>'+x.regs.length+'</b> movimientos. Se añadirán <b>'+nuevos.length+'</b> que no están en este móvil (los que ya tienes no se duplican). También se aplicarán los ajustes de la copia.</div>';
     const a=document.createElement("div");a.className="acts";
     const y=document.createElement("button");y.className="btn small";y.textContent=soloAjustes?"Aplicar ajustes":"Restaurar";y.onclick=()=>{S.regs=S.regs.concat(nuevos.map(r=>({id:r.id,fecha:r.fecha,cuenta:r.cuenta,categoria:r.categoria,concepto:r.concepto||"",importe:Number(r.importe)||0,creado:r.creado||new Date().toISOString(),exportado:!!r.exportado})));
-      if(x.cfg)S.cfg=mergeCfg(x.cfg);
+      if(x.cfg){const keep=S.cfg.saldos;S.cfg=mergeCfg(x.cfg);if(!(x.cfg.saldos&&x.cfg.saldos.fecha))S.cfg.saldos=keep;}
       save();c.hidden=true;vp=periodOf(todayISO());renderForm();renderAll();if(!$("p-cfg").hidden)fillCfg();toast(soloAjustes?"Ajustes aplicados":nuevos.length+" movimientos restaurados");};
     const n=document.createElement("button");n.className="btn small ghost";n.textContent="Cancelar";n.onclick=()=>{c.hidden=true;};
     a.append(y,n);c.appendChild(a);c.scrollIntoView({block:"center",behavior:"smooth"});};
@@ -452,14 +485,39 @@ $("cleanBtn").onclick=()=>{const lim=new Date();lim.setMonth(lim.getMonth()-3);c
 /* ===== ajustes ===== */
 function fillCfg(){
   $("cGasto").value=cfg().gasto.join("\n");$("cExtra").value=cfg().extra.join("\n");$("cIng").value=cfg().ingreso.join("\n");
-  const fx=$("fx");fx.innerHTML='<span class="h">Cuenta</span><span class="h">€/mes</span><span class="h">Desde</span><span class="h">Hasta</span>';
+  const sc=$("saldoCfg");sc.innerHTML="";const sd=cfg().saldos;
+  SLOTS.forEach(a=>{const v=sd.imp[a];sc.insertAdjacentHTML("beforeend",'<label for="sv-'+a+'" style="font-weight:600">'+esc(nom(a))+'</label><input type="text" inputmode="decimal" id="sv-'+a+'" placeholder="0,00 €" value="'+(v===undefined||v===null||v===""?"":String(v).replace(".",","))+'">');});
+  $("saldoFecha").value=todayISO();
+  fixDraft=clone(cfg().fijos);renderFix();
   const ac=$("accCfg");ac.innerHTML='<span class="h">Hueco</span><span class="h">Nombre</span><span class="h">Para qué</span>';
   const HUECO={a1:"Tarjeta 1 (col. A)",a2:"Tarjeta 2 (col. G)",a3:"Efectivo (col. M)",a4:"Banco (col. M)"};
   SLOTS.forEach(a=>{const c=cfg().cuentas[a];ac.insertAdjacentHTML("beforeend",'<span>'+HUECO[a]+'</span><input type="text" id="an-'+a+'" value="'+esc(c.nombre)+'" aria-label="Nombre '+HUECO[a]+'"><input type="text" id="as-'+a+'" value="'+esc(c.sub||"")+'" aria-label="Para qué '+HUECO[a]+'">');});
-  ["a1","a2","a3"].forEach(a=>{const f=cfg().fijos[a]||{imp:0,desde:"",hasta:""};
-    fx.insertAdjacentHTML("beforeend",'<span>'+esc(nom(a))+'</span><input type="number" min="0" step="0.01" inputmode="decimal" id="fi-'+a+'" value="'+esc(f.imp)+'" aria-label="Importe fijo '+a+'"><input type="month" id="fd-'+a+'" value="'+esc(f.desde)+'" aria-label="Desde '+a+'"><input type="month" id="fh-'+a+'" value="'+esc(f.hasta)+'" aria-label="Hasta '+a+'">');});
   $("diaIni").value=cfg().diaIni;$("decSep").value=cfg().dec||",";$("recDia").value=cfg().recDia||15;
 }
+/* editor de fijos */
+let fixDraft=[];
+function accOpts(sel){return '<option value="">—</option>'+SLOTS.map(a=>'<option value="'+a+'"'+(sel===a?" selected":"")+'>'+esc(nom(a))+'</option>').join("");}
+function readFix(){document.querySelectorAll("#fixList .fixrow").forEach((row,i)=>{const q=s=>row.querySelector(s).value;
+  fixDraft[i]={nombre:q(".fn").trim(),imp:parseAmount(q(".fi"))||0,de:q(".fd"),a:q(".fa"),desde:q(".fs"),hasta:q(".fh")};});}
+function renderFix(){const box=$("fixList");box.innerHTML="";
+  if(!fixDraft.length)box.innerHTML='<div class="muted" style="font-size:.85rem">No tienes fijos. Añade tu nómina, cuotas o envíos entre cuentas.</div>';
+  fixDraft.forEach((f,i)=>{const row=document.createElement("div");row.className="blk fixrow";row.style.setProperty("--ac","var(--accent)");
+    row.innerHTML='<div style="display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:6px">'+
+      '<input type="text" class="fn" placeholder="Nombre (ej.: Nómina)" value="'+esc(f.nombre)+'" aria-label="Nombre del fijo">'+
+      '<input type="text" class="fi" inputmode="decimal" placeholder="€/mes" value="'+(f.imp?String(f.imp).replace(".",","):"")+'" aria-label="Importe al mes"></div>'+
+      '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;font-size:.8rem"><label class="muted">Sale de<select class="fd">'+accOpts(f.de)+'</select></label><label class="muted">Entra en<select class="fa">'+accOpts(f.a)+'</select></label>'+
+      '<label class="muted">Desde (mes)<input type="month" class="fs" value="'+esc(f.desde)+'"></label><label class="muted">Hasta (mes)<input type="month" class="fh" value="'+esc(f.hasta)+'"></label></div>';
+    const del=document.createElement("button");del.type="button";del.className="btn small ghost";del.textContent="Quitar";del.style.alignSelf="flex-start";
+    del.onclick=()=>{readFix();fixDraft.splice(i,1);renderFix();};row.appendChild(del);box.appendChild(row);});}
+$("fixAdd").onclick=()=>{readFix();fixDraft.push({nombre:"",imp:0,de:"",a:"",desde:pKey(periodOf(todayISO())),hasta:""});renderFix();};
+$("saldoSave").onclick=()=>{
+  const e=$("cfgErr");e.textContent="";const f=$("saldoFecha").value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(f)){e.textContent="Pon la fecha de los saldos.";return;}
+  const imp={};for(const a of SLOTS){const raw=$("sv-"+a).value.trim();if(raw==="")continue;const v=parseAmount(raw.replace(/^-/,""));if(isNaN(v)){e.textContent="Revisa el saldo de "+nom(a)+".";return;}imp[a]=raw.startsWith("-")?-v:v;}
+  if(!Object.keys(imp).length){e.textContent="Escribe al menos un saldo.";return;}
+  S.cfg.saldos={fecha:f,ts:new Date().toISOString(),imp};
+  if(save()){renderAll();toast("Saldos guardados");showTab("p-add");}
+};
 const lines=id=>[...new Set($(id).value.split("\n").map(s=>s.trim()).filter(Boolean))];
 $("cfgSave").onclick=()=>{
   const e=$("cfgErr");e.textContent="";
@@ -469,7 +527,10 @@ $("cfgSave").onclick=()=>{
   if(!(n.recDia>=1&&n.recDia<=31)){e.textContent="El día para pasar al Excel tiene que estar entre 1 y 31.";return;}
   for(const a of SLOTS){const nm=$("an-"+a).value.trim();if(!nm){e.textContent="Cada cuenta necesita un nombre.";return;}n.cuentas[a]={nombre:nm,sub:$("as-"+a).value.trim()};}
   if(new Set(SLOTS.map(a=>n.cuentas[a].nombre)).size<4){e.textContent="Las cuatro cuentas tienen que tener nombres distintos.";return;}
-  ["a1","a2","a3"].forEach(a=>{n.fijos[a]={imp:Number($("fi-"+a).value)||0,desde:$("fd-"+a).value||"",hasta:$("fh-"+a).value||""};});
+  readFix();
+  for(const f of fixDraft){if(!f.imp||(!f.de&&!f.a)){e.textContent="Cada fijo necesita importe y al menos una cuenta (de dónde sale o dónde entra).";return;}if(f.de&&f.de===f.a){e.textContent="Un fijo no puede salir y entrar en la misma cuenta.";return;}}
+  n.fijos=fixDraft.map(f=>Object.assign({},f,{nombre:f.nombre||"Fijo"}));
+  n.saldos=cfg().saldos;
   S.cfg=n;if(save()){vp=periodOf(todayISO());renderForm();renderAll();toast("Ajustes guardados");}
 };
 

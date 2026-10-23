@@ -227,7 +227,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="recDia">Día del mes para pasar al Excel</label><input id="recDia" type="number" min="1" max="31" inputmode="numeric"></div>
     <p class="err" id="cfgErr" role="alert"></p>
     <button class="btn" id="cfgSave">Guardar ajustes</button>
-    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 5</p>
+    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 6</p>
   </section>
 </div>
 
@@ -258,7 +258,7 @@ const DEFCFG={
   ingreso:["Ingreso extra","Devolución"],
   fijos:[],
   saldos:{fecha:"",ts:"",imp:{}},
-  diaIni:1, dec:",", recDia:15
+  diaIni:1, dec:",", recDia:26
 };
 const clone=o=>JSON.parse(JSON.stringify(o));
 function mergeCfg(c){const n=Object.assign(clone(DEFCFG),c||{});n.cuentas=Object.assign(clone(DEFCFG.cuentas),(c&&c.cuentas)||{});
@@ -409,9 +409,12 @@ function renderBanner(){
   const b=$("banner");b.innerHTML="";
   if(!storageOk){b.textContent="Este navegador no deja guardar datos (¿modo privado?). Ábrela en una ventana normal.";b.hidden=false;return;}
   const pend=S.regs.filter(r=>!r.exportado).length;
-  const now=new Date(),rd=cfg().recDia||15;
-  const due=new Date(now.getFullYear(),now.getMonth(),rd);if(now<due)due.setMonth(due.getMonth()-1);
-  const exportedSinceDue=S.lastExport&&new Date(S.lastExport)>=due;
+  /* Aviso mensual: desde el día elegido (p. ej. 26) hasta que pases los datos. Si se te pasó el mes anterior, también avisa. */
+  const now=new Date(),rd=cfg().recDia||26;
+  const dueThis=new Date(now.getFullYear(),now.getMonth(),rd),duePrev=new Date(now.getFullYear(),now.getMonth()-1,rd);
+  const after=(t,d)=>t&&new Date(t)>=d;
+  const overdue=S.regs.some(r=>!r.exportado&&r.fecha<iso(duePrev))&&!after(S.lastExport,duePrev);
+  const exportedSinceDue=now<dueThis?!overdue:after(S.lastExport,dueThis);
   const msgs=[];
   const sinSaldo=SLOTS.every(a=>saldoDe(a)===null);
   if(sinSaldo&&storageOk){b.innerHTML='<div><b>¿Cuánto tienes ahora?</b> Pon el saldo actual de tus cuentas y la app te enseñará tu dinero real en cada una.</div>';
@@ -420,7 +423,7 @@ function renderBanner(){
   if(pend&&!exportedSinceDue)
     msgs.push("Toca pasar al Excel: tienes <b>"+pend+"</b> movimientos pendientes.");
   const dB=daysSince(S.lastBackup);
-  if(S.regs.length&&(dB===null||dB>=15))msgs.push(dB===null?"Aún no has hecho ninguna copia de seguridad.":"Hace "+dB+" días de tu última copia de seguridad.");
+  if(S.regs.length&&((now>=dueThis&&!after(S.lastBackup,dueThis))||(dB!==null&&dB>40)))msgs.push(dB===null?"Haz también la copia de seguridad del mes.":"Haz también la copia de seguridad del mes (la última fue hace "+dB+" días).");
   if(!msgs.length){b.hidden=true;return;}
   b.innerHTML='<div>'+msgs.join("<br>")+'</div>';
   const acts=document.createElement("div");acts.className="acts";const go=document.createElement("button");go.className="btn small";go.textContent="Ir a Excel";go.onclick=()=>showTab("p-xls");acts.appendChild(go);b.appendChild(acts);
@@ -549,7 +552,7 @@ function fillCfg(){
   const ac=$("accCfg");ac.innerHTML='<span class="h">Hueco</span><span class="h">Nombre</span><span class="h">Para qué</span>';
   const HUECO={a1:"Tarjeta 1 (col. A)",a2:"Tarjeta 2 (col. G)",a3:"Efectivo (col. M)",a4:"Banco (col. M)"};
   SLOTS.forEach(a=>{const c=cfg().cuentas[a];ac.insertAdjacentHTML("beforeend",'<span>'+HUECO[a]+'</span><input type="text" id="an-'+a+'" value="'+esc(c.nombre)+'" aria-label="Nombre '+HUECO[a]+'"><input type="text" id="as-'+a+'" value="'+esc(c.sub||"")+'" aria-label="Para qué '+HUECO[a]+'">');});
-  $("diaIni").value=cfg().diaIni;$("decSep").value=cfg().dec||",";$("recDia").value=cfg().recDia||15;
+  $("diaIni").value=cfg().diaIni;$("decSep").value=cfg().dec||",";$("recDia").value=cfg().recDia||26;
 }
 /* editor de fijos */
 let fixDraft=[];

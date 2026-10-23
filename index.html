@@ -67,6 +67,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .acctbtns button{border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 2px;font-weight:700;font-size:.84rem;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted)}
 .acctbtns button small{font-weight:500;font-size:.66rem;line-height:1.1;text-align:center}
 .acctbtns button[aria-pressed="true"]{border-color:var(--ac);color:var(--ac);background:color-mix(in srgb,var(--ac) 10%,var(--surface))}
+.modeseg{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);background:var(--surface-2);border-radius:12px;padding:4px;gap:4px}
+.modeseg button{border:0;background:transparent;border-radius:9px;padding:9px 6px;font-weight:600;font-size:.86rem;color:var(--muted)}
+.modeseg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.a.Traspaso{color:var(--muted)}
 .amount{display:flex;align-items:baseline;gap:6px;border-bottom:2px solid var(--line);padding-bottom:4px}
 .amount:focus-within{border-color:var(--accent)}
 .amount input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font-family:var(--f-display);font-weight:700;font-size:2.4rem;font-variant-numeric:tabular-nums;padding:0}
@@ -150,9 +154,15 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
   <div class="totals" id="totals"></div>
 
   <section id="p-add" class="card" aria-label="Apuntar movimiento">
-    <div class="field"><span class="lbl" id="accLbl">¿Con qué has pagado?</span><div class="acctbtns" id="acctBtns" role="group" aria-labelledby="accLbl"></div></div>
+    <div class="modeseg" id="modeSeg" role="group" aria-label="Tipo de movimiento">
+      <button type="button" data-m="mov">Gasto o ingreso</button><button type="button" data-m="tr">⇄ Traspaso entre cuentas</button></div>
+    <div class="field" id="accField"><span class="lbl" id="accLbl">¿Con qué has pagado?</span><div class="acctbtns" id="acctBtns" role="group" aria-labelledby="accLbl"></div></div>
+    <div id="trBox" hidden style="display:flex;flex-direction:column;gap:14px">
+      <div class="field"><span class="lbl" id="trDeLbl">Sale de</span><div class="acctbtns" id="trDe" role="group" aria-labelledby="trDeLbl"></div></div>
+      <div class="field"><span class="lbl" id="trALbl">Entra en</span><div class="acctbtns" id="trA" role="group" aria-labelledby="trALbl"></div></div>
+    </div>
     <div class="amount"><input id="importe" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importe en euros"><span>€</span></div>
-    <div class="field"><span class="lbl">Categoría</span><div id="cats" style="display:flex;flex-direction:column;gap:12px"></div></div>
+    <div class="field" id="catField"><span class="lbl">Categoría</span><div id="cats" style="display:flex;flex-direction:column;gap:12px"></div></div>
     <div class="field"><label class="lbl" for="concepto">Concepto (opcional)</label><input id="concepto" type="text" placeholder="Ej.: Mercadona" autocomplete="off"></div>
     <div class="field"><label class="lbl" for="fecha">Fecha</label>
       <div class="datebar"><button type="button" class="chip" id="dHoy">Hoy</button><button type="button" class="chip" id="dAyer">Ayer</button><input id="fecha" type="date"></div></div>
@@ -217,7 +227,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="recDia">Día del mes para pasar al Excel</label><input id="recDia" type="number" min="1" max="31" inputmode="numeric"></div>
     <p class="err" id="cfgErr" role="alert"></p>
     <button class="btn" id="cfgSave">Guardar ajustes</button>
-    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 3</p>
+    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 5</p>
   </section>
 </div>
 
@@ -300,12 +310,23 @@ function fijoNeto(acc,p){return cfg().fijos.reduce((s,f)=>{if(!activo(f,p))retur
 function saldoDe(acc){const sd=cfg().saldos,v=sd.imp[acc];if(v===undefined||v===null||v===""||!sd.fecha)return null;
   let t=Number(v)||0;const pNow=periodOf(todayISO());
   for(let p=periodOf(sd.fecha)+1;p<=pNow;p++)t+=fijoNeto(acc,p);
-  S.regs.forEach(r=>{if(r.cuenta!==acc)return;if(r.fecha>sd.fecha||(r.fecha===sd.fecha&&(r.creado||"")>(sd.ts||""))){const a=Number(r.importe)||0;t+=tipoDe(r.categoria)==="Ingreso"?a:-a;}});
+  S.regs.forEach(r=>{if(!(r.fecha>sd.fecha||(r.fecha===sd.fecha&&(r.creado||"")>(sd.ts||""))))return;const a=Number(r.importe)||0;
+    if(isTr(r)){if(r.de===acc)t-=a;if(r.a===acc)t+=a;return;}
+    if(r.cuenta!==acc)return;t+=tipoDe(r.categoria)==="Ingreso"?a:-a;});
   return Math.round(t*100)/100;}
 
 /* ===== formulario ===== */
-let stCat=null,openId=null,confirmDel=null,confirmMark=null;
+/* Traspaso: un solo apunte que, al pasar al Excel, se convierte en una salida y una entrada */
+const TR_OUT="Traspaso enviado",TR_IN="Traspaso recibido";
+const isTr=r=>r&&r.tipo==="traspaso";
+let stCat=null,openId=null,confirmDel=null,confirmMark=null,mode="mov",trDe="a4",trA="a1";
+function accRow(el,sel,onPick){el.innerHTML="";SLOTS.forEach(a=>{const b=document.createElement("button");b.type="button";b.style.setProperty("--ac",SLOT_COLOR[a]);
+  b.setAttribute("aria-pressed",String(sel===a));b.innerHTML=esc(nom(a));b.onclick=()=>onPick(a);el.appendChild(b);});}
 function renderForm(){
+  document.querySelectorAll("#modeSeg button").forEach(b=>{b.setAttribute("aria-pressed",String(b.dataset.m===mode));b.onclick=()=>{mode=b.dataset.m;$("formErr").textContent="";renderForm();};});
+  const tr=mode==="tr";$("trBox").hidden=!tr;$("accField").hidden=tr;$("catField").hidden=tr;
+  $("concepto").placeholder=tr?"Ej.: Para la compra online":"Ej.: Mercadona";
+  if(tr){accRow($("trDe"),trDe,a=>{trDe=a;if(trA===a)trA=SLOTS.find(x=>x!==a);renderForm();});accRow($("trA"),trA,a=>{trA=a;if(trDe===a)trDe=SLOTS.find(x=>x!==a);renderForm();});updatePreview();return;}
   const ab=$("acctBtns");ab.innerHTML="";
   SLOTS.forEach(a=>{const b=document.createElement("button");b.type="button";b.style.setProperty("--ac",SLOT_COLOR[a]);
     b.setAttribute("aria-pressed",String(S.lastAcc===a));b.innerHTML=esc(nom(a))+"<small>"+esc(cfg().cuentas[a].sub||"")+"</small>";
@@ -321,7 +342,9 @@ function renderForm(){
     g.appendChild(ch);box.appendChild(g);});
   updatePreview();
 }
-function updatePreview(){const imp=parseAmount($("importe").value),p=$("preview");if(!stCat||!(imp>0)){p.textContent="";return;}const t=tipoDe(stCat);
+function updatePreview(){const imp=parseAmount($("importe").value),p=$("preview");
+  if(mode==="tr"){p.innerHTML=imp>0?"Pasan <b>"+eur(imp)+"</b> de <b>"+esc(nom(trDe))+"</b> a <b>"+esc(nom(trA))+"</b>. No cuenta como gasto ni como ingreso.":"";return;}
+  if(!stCat||!(imp>0)){p.textContent="";return;}const t=tipoDe(stCat);
   p.innerHTML=(t==="Ingreso"?"Entran ":"Salen ")+"<b>"+eur(imp)+"</b> "+(t==="Ingreso"?"en ":"de ")+"<b>"+esc(nom(S.lastAcc))+"</b> · "+esc(stCat)+(t==="Extraordinario"?" (extraordinario)":"");}
 $("importe").addEventListener("input",updatePreview);
 $("fecha").value=todayISO();
@@ -336,13 +359,16 @@ $("saveBtn").onclick=()=>{
   const err=$("formErr");err.textContent="";
   const imp=parseAmount($("importe").value);
   if(!(imp>0)){err.textContent="Escribe un importe mayor que cero, por ejemplo 12,50.";$("importe").focus();return;}
-  if(!stCat){err.textContent="Elige una categoría.";return;}
+  const tr=mode==="tr";
+  if(!tr&&!stCat){err.textContent="Elige una categoría.";return;}
+  if(tr&&trDe===trA){err.textContent="La cuenta de salida y la de entrada tienen que ser distintas.";return;}
   const fecha=$("fecha").value;if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){err.textContent="Pon una fecha válida.";return;}
-  const doc={id:uid(),fecha,cuenta:S.lastAcc,categoria:stCat,concepto:$("concepto").value.trim(),importe:Math.round(imp*100)/100,creado:new Date().toISOString(),exportado:false};
+  const base={id:uid(),fecha,concepto:$("concepto").value.trim(),importe:Math.round(imp*100)/100,creado:new Date().toISOString(),exportado:false};
+  const doc=tr?Object.assign(base,{tipo:"traspaso",de:trDe,a:trA,exDe:false,exA:false}):Object.assign(base,{cuenta:S.lastAcc,categoria:stCat});
   S.regs.push(doc);
   if(!save()){S.regs.pop();err.textContent="No se ha podido guardar. Revisa que el navegador no esté en modo privado.";return;}
   $("importe").value="";$("concepto").value="";stCat=null;renderForm();renderAll();
-  toast(eur(doc.importe)+" · "+doc.categoria+" · "+nom(doc.cuenta)+" guardado");
+  toast(tr?"Traspaso de "+eur(doc.importe)+" · "+nom(doc.de)+" → "+nom(doc.a)+" guardado":eur(doc.importe)+" · "+doc.categoria+" · "+nom(doc.cuenta)+" guardado");
 };
 
 /* ===== resumen ===== */
@@ -351,8 +377,10 @@ function renderSummary(){
   const y=Math.floor(vp/12),m=vp%12,rg=rangeOf(vp);
   $("mLabel").textContent=MESES[m]+" "+y;
   $("mRange").textContent=rg.from.getDate()+" "+MCORTO[rg.from.getMonth()]+" – "+rg.to.getDate()+" "+MCORTO[rg.to.getMonth()];
-  const s={};SLOTS.forEach(a=>s[a]={in:0,out:0});let hab=0,ext=0;
-  inPeriod().forEach(r=>{const a=Number(r.importe)||0,t=tipoDe(r.categoria);if(!s[r.cuenta])return;if(t==="Ingreso")s[r.cuenta].in+=a;else s[r.cuenta].out+=a;if(t==="Gasto")hab+=a;else if(t==="Extraordinario")ext+=a;});
+  const s={};SLOTS.forEach(a=>s[a]={in:0,out:0,tin:0,tout:0});let hab=0,ext=0;
+  inPeriod().forEach(r=>{const a=Number(r.importe)||0;
+    if(isTr(r)){if(s[r.de])s[r.de].tout+=a;if(s[r.a])s[r.a].tin+=a;return;}
+    const t=tipoDe(r.categoria);if(!s[r.cuenta])return;if(t==="Ingreso")s[r.cuenta].in+=a;else s[r.cuenta].out+=a;if(t==="Gasto")hab+=a;else if(t==="Extraordinario")ext+=a;});
   const box=$("accs");box.innerHTML="";
   SLOTS.forEach(a=>{const c=document.createElement("div");c.className="acc";c.style.setProperty("--ac",SLOT_COLOR[a]);
     const sal=saldoDe(a);
@@ -360,11 +388,14 @@ function renderSummary(){
       :'<span class="s" style="padding-top:6px;border-top:1px dashed var(--line);margin-top:6px">Saldo: <b style="color:var(--ink)'+(sal<0?';color:var(--out)':'')+'">'+eur(sal)+'</b></span>';
     if(a==="a4"){c.innerHTML='<span class="n">'+esc(nom(a))+' · gasto extra</span><span class="big num">'+eur(s[a].out)+'</span><span class="s">este mes'+(s[a].in?' · entró '+eur(s[a].in):'')+'</span>'+salHtml;
       if(sal!==null){c.innerHTML='<span class="n">'+esc(nom(a))+' · saldo hoy</span><span class="big num'+(sal<0?' neg':'')+'">'+eur(sal)+'</span><span class="s">gasto extra este mes: '+eur(s[a].out)+'</span>';}}
-    else{const recib=fijo(a,vp)+s[a].in,queda=recib-s[a].out,pct=recib>0?Math.min(100,s[a].out/recib*100):(s[a].out>0?100:0);
+    else{const recib=fijo(a,vp)+s[a].in+s[a].tin,usado=s[a].out+s[a].tout,queda=recib-usado,pct=recib>0?Math.min(100,usado/recib*100):(usado>0?100:0);
       if(sal!==null){
         c.innerHTML='<span class="n">'+esc(nom(a))+' · saldo hoy</span><span class="big num'+(sal<0?' neg':'')+'">'+eur(sal)+'</span>'+
-          '<span class="s">este mes: gastado '+eur(s[a].out)+(recib?' de '+eur(recib)+' · te queda '+eur(queda):'')+'</span>'+
-          (recib?'<div class="bar'+(queda<0?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>':'');
+          /* "te queda" solo tiene sentido si ese mes hay un envío fijo a la cuenta (tu presupuesto del mes) */
+          (fijo(a,vp)>0
+            ?'<span class="s">presupuesto del mes: gastado '+eur(s[a].out)+' de '+eur(recib)+' · te queda <b style="color:'+(queda<0?'var(--out)':'var(--ink)')+'">'+eur(queda)+'</b></span>'+
+             '<div class="bar'+(queda<0?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>'
+            :'<span class="s">este mes: gastado '+eur(s[a].out)+(s[a].in+s[a].tin?' · entró '+eur(s[a].in+s[a].tin):'')+(s[a].tout?' · traspasado '+eur(s[a].tout):'')+'</span>');
       }else
       c.innerHTML='<span class="n">'+esc(nom(a))+' · te queda</span><span class="big num'+(queda<0?' neg':'')+'">'+eur(queda)+'</span><span class="s">gastado '+eur(s[a].out)+' de '+eur(recib)+'</span><div class="bar'+(queda<0?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>'+salHtml;}
     const sb=c.querySelector("[data-setsaldo]");if(sb)sb.onclick=()=>{showTab("p-cfg");setTimeout(()=>$("saldoBox").scrollIntoView({block:"start",behavior:"smooth"}),50);};
@@ -403,14 +434,20 @@ function renderList(){
   const byDay={};ms.forEach(r=>{(byDay[r.fecha]=byDay[r.fecha]||[]).push(r);});
   Object.keys(byDay).sort().reverse().forEach(day=>{
     const g=document.createElement("div");g.className="day";
-    const tot=byDay[day].filter(r=>tipoDe(r.categoria)!=="Ingreso").reduce((s,r)=>s+(Number(r.importe)||0),0);
+    const tot=byDay[day].filter(r=>!isTr(r)&&tipoDe(r.categoria)!=="Ingreso").reduce((s,r)=>s+(Number(r.importe)||0),0);
     g.innerHTML='<h3><span>'+esc(new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}))+'</span><span class="num">'+(tot?"Gastado "+eur(tot):"")+'</span></h3>';
     byDay[day].sort((a,b)=>(b.creado||"").localeCompare(a.creado||"")).forEach(r=>{
-      const t=tipoDe(r.categoria);
       const it=document.createElement("div");it.className="item";it.tabIndex=0;it.setAttribute("role","button");it.setAttribute("aria-expanded",String(openId===r.id));
+      if(isTr(r)){
+        it.style.setProperty("--ac",SLOT_COLOR[r.de]||"var(--muted)");
+        it.innerHTML='<span class="t">'+esc(r.concepto||"Traspaso")+'</span><span class="a Traspaso">⇄ '+eur(r.importe)+'</span>'+
+          '<span class="m"><span class="tag acn">'+esc(nom(r.de))+'</span><span>→</span><span class="tag acn" style="--ac:'+SLOT_COLOR[r.a]+'">'+esc(nom(r.a))+'</span>'+(r.exportado?'<span class="tag ok">En Excel</span>':((r.exDe||r.exA)?'<span class="tag">Medio pasado</span>':''))+'</span>';
+      }else{
+      const t=tipoDe(r.categoria);
       it.style.setProperty("--ac",SLOT_COLOR[r.cuenta]||"var(--muted)");
       it.innerHTML='<span class="t">'+esc(r.concepto||r.categoria)+'</span><span class="a '+t+'">'+(t==="Ingreso"?"+":"−")+eur(r.importe)+'</span>'+
         '<span class="m"><span class="tag acn">'+esc(nom(r.cuenta))+'</span>'+(r.concepto?'<span>'+esc(r.categoria)+'</span>':'')+(t==="Extraordinario"?'<span class="tag">Extraordinario</span>':'')+(r.exportado?'<span class="tag ok">En Excel</span>':'')+'</span>';
+      }
       if(openId===r.id){
         const d=document.createElement("div");d.className="detail";d.onclick=e=>e.stopPropagation();
         d.innerHTML=r.exportado?'<div class="muted">Ya está en tu Excel. Si lo borras aquí, bórralo también allí.</div>':'';
@@ -420,7 +457,7 @@ function renderList(){
           const n=document.createElement("button");n.className="btn small ghost";n.textContent="Cancelar";n.onclick=()=>{confirmDel=null;renderList();};acts.append(y,n);
         }else{
           const b=document.createElement("button");b.className="btn small ghost";b.textContent="Borrar";b.onclick=()=>{confirmDel=r.id;renderList();};acts.append(b);
-          if(r.exportado){const u=document.createElement("button");u.className="btn small ghost";u.textContent="Volver a dejar pendiente";u.onclick=()=>{r.exportado=false;save();renderAll();toast("Pendiente otra vez");};acts.append(u);}
+          if(r.exportado){const u=document.createElement("button");u.className="btn small ghost";u.textContent="Volver a dejar pendiente";u.onclick=()=>{r.exportado=false;if(isTr(r)){r.exDe=false;r.exA=false;}save();renderAll();toast("Pendiente otra vez");};acts.append(u);}
         }
         d.appendChild(acts);it.appendChild(d);
       }
@@ -432,7 +469,15 @@ function renderList(){
 
 /* ===== Excel ===== */
 const sortAsc=(a,b)=>(a.fecha+a.creado).localeCompare(b.fecha+b.creado);
-const pendOf=bk=>S.regs.filter(r=>!r.exportado&&bk.accs.includes(r.cuenta)).sort(sortAsc);
+/* filas pendientes de un bloque; un traspaso da una fila de salida y otra de entrada, cada una en el bloque de su cuenta */
+function pendOf(bk){const rows=[];
+  S.regs.forEach(r=>{
+    if(isTr(r)){
+      if(!r.exDe&&bk.accs.includes(r.de))rows.push({ref:r,side:"de",fecha:r.fecha,creado:r.creado+"0",concepto:r.concepto||"Traspaso a "+nom(r.a),categoria:TR_OUT,cuenta:r.de,importe:r.importe});
+      if(!r.exA&&bk.accs.includes(r.a))rows.push({ref:r,side:"a",fecha:r.fecha,creado:r.creado+"1",concepto:r.concepto||"Traspaso de "+nom(r.de),categoria:TR_IN,cuenta:r.a,importe:r.importe});
+    }else if(!r.exportado&&bk.accs.includes(r.cuenta))rows.push({ref:r,side:null,fecha:r.fecha,creado:r.creado,concepto:r.concepto,categoria:r.categoria,cuenta:r.cuenta,importe:r.importe});
+  });
+  return rows.sort(sortAsc);}
 const clean=s=>String(s||"").replace(/[\t\r\n]+/g," ");
 const amt=n=>(Number(n)||0).toFixed(2).replace(".",cfg().dec||",");
 function tsv(bk,rows){return rows.map(r=>bk.key==="B3"?[fmtDate(r.fecha),clean(r.concepto),r.categoria,nom(r.cuenta),amt(r.importe)].join("\t"):[fmtDate(r.fecha),clean(r.concepto),r.categoria,amt(r.importe)].join("\t")).join("\r\n");}
@@ -458,7 +503,9 @@ function copyBlock(bk){
   const showFb=()=>{fb.hidden=false;fb.value=txt;fb.focus();fb.select();toast("Selecciona el texto y cópialo");};
   try{navigator.clipboard.writeText(txt).then(()=>{fb.hidden=true;toast(rows.length+" copiados. Pégalos en el bloque "+blkTitle(bk));},showFb);}catch(e){showFb();}
 }
-function markBlock(bk){confirmMark=null;const ids=new Set(pendOf(bk).map(r=>r.id));S.regs.forEach(r=>{if(ids.has(r.id))r.exportado=true;});S.lastExport=new Date().toISOString();save();renderAll();toast(blkTitle(bk)+": "+ids.size+" marcados como pasados");}
+function markBlock(bk){confirmMark=null;const rows=pendOf(bk);
+  rows.forEach(x=>{const r=x.ref;if(x.side==="de")r.exDe=true;else if(x.side==="a")r.exA=true;else r.exportado=true;if(isTr(r))r.exportado=!!(r.exDe&&r.exA);});
+  S.lastExport=new Date().toISOString();save();renderAll();toast(blkTitle(bk)+": "+rows.length+" marcados como pasados");}
 
 /* copia de seguridad */
 $("bkSave").onclick=()=>{const data=JSON.stringify({app:"mis-cuentas",version:1,fecha:new Date().toISOString(),regs:S.regs,cfg:S.cfg},null,1);
@@ -468,13 +515,14 @@ $("cfgLoadBtn").onclick=()=>{showTab("p-xls");$("bkFile").click();};
 $("bkFile").onchange=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const rd=new FileReader();
   rd.onload=()=>{let x;try{x=JSON.parse(rd.result);}catch(er){toast("Ese archivo no es una copia válida");return;}
     if(!x||x.app!=="mis-cuentas"||!Array.isArray(x.regs)){toast("Ese archivo no es una copia de Mis Cuentas");return;}
-    const ids=new Set(S.regs.map(r=>r.id));const nuevos=x.regs.filter(r=>r&&r.id&&r.fecha&&SLOTS.includes(r.cuenta)&&!ids.has(r.id));
+    const ids=new Set(S.regs.map(r=>r.id));const nuevos=x.regs.filter(r=>r&&r.id&&r.fecha&&(isTr(r)?(SLOTS.includes(r.de)&&SLOTS.includes(r.a)):SLOTS.includes(r.cuenta))&&!ids.has(r.id));
     const soloAjustes=!x.regs.length&&x.cfg;
     const c=$("bkConfirm");c.hidden=false;
     c.innerHTML=soloAjustes?'<div>Este archivo trae tus <b>ajustes</b>: cuentas, categorías y fijos. Se aplicarán en este móvil. Tus movimientos no se tocan.</div>'
       :'<div>La copia del '+esc(new Date(x.fecha).toLocaleDateString("es-ES"))+' tiene <b>'+x.regs.length+'</b> movimientos. Se añadirán <b>'+nuevos.length+'</b> que no están en este móvil (los que ya tienes no se duplican). También se aplicarán los ajustes de la copia.</div>';
     const a=document.createElement("div");a.className="acts";
-    const y=document.createElement("button");y.className="btn small";y.textContent=soloAjustes?"Aplicar ajustes":"Restaurar";y.onclick=()=>{S.regs=S.regs.concat(nuevos.map(r=>({id:r.id,fecha:r.fecha,cuenta:r.cuenta,categoria:r.categoria,concepto:r.concepto||"",importe:Number(r.importe)||0,creado:r.creado||new Date().toISOString(),exportado:!!r.exportado})));
+    const y=document.createElement("button");y.className="btn small";y.textContent=soloAjustes?"Aplicar ajustes":"Restaurar";y.onclick=()=>{S.regs=S.regs.concat(nuevos.map(r=>{const b={id:r.id,fecha:r.fecha,concepto:r.concepto||"",importe:Number(r.importe)||0,creado:r.creado||new Date().toISOString(),exportado:!!r.exportado};
+      return isTr(r)?Object.assign(b,{tipo:"traspaso",de:r.de,a:r.a,exDe:!!r.exDe,exA:!!r.exA}):Object.assign(b,{cuenta:r.cuenta,categoria:r.categoria});}));
       if(x.cfg){const keep=S.cfg.saldos;S.cfg=mergeCfg(x.cfg);if(!(x.cfg.saldos&&x.cfg.saldos.fecha))S.cfg.saldos=keep;}
       save();c.hidden=true;vp=periodOf(todayISO());renderForm();renderAll();if(!$("p-cfg").hidden)fillCfg();toast(soloAjustes?"Ajustes aplicados":nuevos.length+" movimientos restaurados");};
     const n=document.createElement("button");n.className="btn small ghost";n.textContent="Cancelar";n.onclick=()=>{c.hidden=true;};

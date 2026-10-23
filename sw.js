@@ -1,6 +1,6 @@
 // Guarda la app en el móvil para que funcione sin internet. No toca tus datos.
 // Versión 3: al abrir, siempre pide la última versión a internet (sin usar copias viejas).
-const CACHE = "mis-cuentas-v3";
+const CACHE = "mis-cuentas-v5";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {

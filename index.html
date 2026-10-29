@@ -193,6 +193,11 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     </div>
     <div id="bkConfirm" class="banner" hidden></div>
     <hr class="sep">
+    <h2>Empezar de cero</h2>
+    <p class="muted" style="margin:0;font-size:.88rem">Borra todos los movimientos de este móvil (por ejemplo, los de prueba). Tus cuentas, categorías, fijos y saldos se mantienen. Después, revisa tus saldos en Ajustes.</p>
+    <div class="acts"><button class="btn small ghost" id="resetBtn">Borrar todos los movimientos</button></div>
+    <div id="resetConfirm" class="banner" hidden></div>
+    <hr class="sep">
     <h2>Liberar espacio</h2>
     <p class="muted" style="margin:0;font-size:.88rem">Borra de este móvil lo que ya está en tu Excel y tiene más de 3 meses. Lo pendiente no se toca.</p>
     <div class="acts"><button class="btn small ghost" id="cleanBtn">Limpiar lo antiguo</button></div>
@@ -217,7 +222,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="cExtra">Categorías de gasto extraordinario</label><textarea id="cExtra" style="min-height:70px"></textarea></div>
     <div class="field"><label class="lbl" for="cIng">Categorías de entrada de dinero</label><textarea id="cIng" style="min-height:70px"></textarea></div>
     <div class="field"><span class="lbl">Movimientos fijos de cada mes</span>
-      <span class="muted" style="font-size:.8rem">Nómina, cuotas, envíos entre tus cuentas… La app los suma y resta sola al empezar cada mes. Con "Hasta" vacío se repite siempre.</span>
+      <span class="muted" style="font-size:.8rem">Nómina, cuotas, envíos entre tus cuentas… La app los suma y resta sola en tu saldo el día del mes que pongas (si lo dejas vacío, al empezar el mes). Con "Hasta" vacío se repite siempre.</span>
       <div id="fixList" style="display:flex;flex-direction:column;gap:8px"></div>
       <div class="acts"><button type="button" class="btn small ghost" id="fixAdd">+ Añadir fijo</button></div></div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px">
@@ -227,7 +232,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="recDia">Día del mes para pasar al Excel</label><input id="recDia" type="number" min="1" max="31" inputmode="numeric"></div>
     <p class="err" id="cfgErr" role="alert"></p>
     <button class="btn" id="cfgSave">Guardar ajustes</button>
-    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 6</p>
+    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 7</p>
   </section>
 </div>
 
@@ -307,9 +312,15 @@ function fijo(acc,p){return cfg().fijos.filter(f=>f.a===acc&&activo(f,p)).reduce
 /* entra - sale fijo en una cuenta ese mes (para el saldo) */
 function fijoNeto(acc,p){return cfg().fijos.reduce((s,f)=>{if(!activo(f,p))return s;const v=Number(f.imp)||0;return s+(f.a===acc?v:0)-(f.de===acc?v:0);},0);}
 /* saldo actual = saldo que pusiste + fijos de los meses que han empezado después + lo apuntado después */
+/* fecha en que se cobra un fijo dentro de un mes: su "día" si lo tiene; si no, el primer día del mes */
+function fechaFijo(f,p){const y=Math.floor(p/12),m=p%12,d=parseInt(f.dia,10);
+  if(!(d>=1&&d<=31))return iso(rangeOf(p).from);
+  const di=cfg().diaIni;return iso(di>1&&d>=di?new Date(y,m-1,d):new Date(y,m,d));}
 function saldoDe(acc){const sd=cfg().saldos,v=sd.imp[acc];if(v===undefined||v===null||v===""||!sd.fecha)return null;
-  let t=Number(v)||0;const pNow=periodOf(todayISO());
-  for(let p=periodOf(sd.fecha)+1;p<=pNow;p++)t+=fijoNeto(acc,p);
+  let t=Number(v)||0;const hoy=todayISO(),pNow=periodOf(hoy);
+  /* fijos cobrados después de la fecha del saldo y hasta hoy */
+  for(let p=periodOf(sd.fecha);p<=pNow;p++)cfg().fijos.forEach(f=>{if(!activo(f,p))return;const fd=fechaFijo(f,p);if(fd<=sd.fecha||fd>hoy)return;
+    const x=Number(f.imp)||0;if(f.a===acc)t+=x;if(f.de===acc)t-=x;});
   S.regs.forEach(r=>{if(!(r.fecha>sd.fecha||(r.fecha===sd.fecha&&(r.creado||"")>(sd.ts||""))))return;const a=Number(r.importe)||0;
     if(isTr(r)){if(r.de===acc)t-=a;if(r.a===acc)t+=a;return;}
     if(r.cuenta!==acc)return;t+=tipoDe(r.categoria)==="Ingreso"?a:-a;});
@@ -532,6 +543,15 @@ $("bkFile").onchange=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
     a.append(y,n);c.appendChild(a);c.scrollIntoView({block:"center",behavior:"smooth"});};
   rd.readAsText(f);e.target.value="";};
 
+/* empezar de cero */
+$("resetBtn").onclick=()=>{const c=$("resetConfirm");c.hidden=false;
+  if(!S.regs.length){c.innerHTML="<div>No hay movimientos que borrar.</div>";setTimeout(()=>c.hidden=true,2500);return;}
+  c.innerHTML='<div>Se borrarán los <b>'+S.regs.length+'</b> movimientos de este móvil. No se puede deshacer (salvo que tengas una copia de seguridad).</div>';
+  const a=document.createElement("div");a.className="acts";
+  const y=document.createElement("button");y.className="btn small danger";y.textContent="Sí, borrar todo";y.onclick=()=>{S.regs=[];S.lastExport=null;save();c.hidden=true;openId=null;renderForm();renderAll();toast("Movimientos borrados");};
+  const n=document.createElement("button");n.className="btn small ghost";n.textContent="Cancelar";n.onclick=()=>{c.hidden=true;};
+  a.append(y,n);c.appendChild(a);};
+
 /* limpiar antiguo */
 $("cleanBtn").onclick=()=>{const lim=new Date();lim.setMonth(lim.getMonth()-3);const L=iso(lim);
   const old=S.regs.filter(r=>r.exportado&&r.fecha<L);const c=$("cleanConfirm");c.hidden=false;
@@ -558,13 +578,15 @@ function fillCfg(){
 let fixDraft=[];
 function accOpts(sel){return '<option value="">—</option>'+SLOTS.map(a=>'<option value="'+a+'"'+(sel===a?" selected":"")+'>'+esc(nom(a))+'</option>').join("");}
 function readFix(){document.querySelectorAll("#fixList .fixrow").forEach((row,i)=>{const q=s=>row.querySelector(s).value;
-  fixDraft[i]={nombre:q(".fn").trim(),imp:parseAmount(q(".fi"))||0,de:q(".fd"),a:q(".fa"),desde:q(".fs"),hasta:q(".fh")};});}
+  const d=parseInt(q(".fdia"),10);
+  fixDraft[i]={nombre:q(".fn").trim(),imp:parseAmount(q(".fi"))||0,dia:(d>=1&&d<=31)?d:"",de:q(".fd"),a:q(".fa"),desde:q(".fs"),hasta:q(".fh")};});}
 function renderFix(){const box=$("fixList");box.innerHTML="";
   if(!fixDraft.length)box.innerHTML='<div class="muted" style="font-size:.85rem">No tienes fijos. Añade tu nómina, cuotas o envíos entre cuentas.</div>';
   fixDraft.forEach((f,i)=>{const row=document.createElement("div");row.className="blk fixrow";row.style.setProperty("--ac","var(--accent)");
-    row.innerHTML='<div style="display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:6px">'+
+    row.innerHTML='<div style="display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) minmax(0,.7fr);gap:6px">'+
       '<input type="text" class="fn" placeholder="Nombre (ej.: Nómina)" value="'+esc(f.nombre)+'" aria-label="Nombre del fijo">'+
-      '<input type="text" class="fi" inputmode="decimal" placeholder="€/mes" value="'+(f.imp?String(f.imp).replace(".",","):"")+'" aria-label="Importe al mes"></div>'+
+      '<input type="text" class="fi" inputmode="decimal" placeholder="€/mes" value="'+(f.imp?String(f.imp).replace(".",","):"")+'" aria-label="Importe al mes">'+
+      '<input type="number" class="fdia" min="1" max="31" inputmode="numeric" placeholder="Día" value="'+esc(f.dia||"")+'" aria-label="Día del mes en que se cobra"></div>'+
       '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;font-size:.8rem"><label class="muted">Sale de<select class="fd">'+accOpts(f.de)+'</select></label><label class="muted">Entra en<select class="fa">'+accOpts(f.a)+'</select></label>'+
       '<label class="muted">Desde (mes)<input type="month" class="fs" value="'+esc(f.desde)+'"></label><label class="muted">Hasta (mes)<input type="month" class="fh" value="'+esc(f.hasta)+'"></label></div>';
     const del=document.createElement("button");del.type="button";del.className="btn small ghost";del.textContent="Quitar";del.style.alignSelf="flex-start";

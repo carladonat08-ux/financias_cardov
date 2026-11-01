@@ -218,6 +218,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
         <label class="muted" style="font-size:.8rem">Repite la contraseña de cifrado<input id="syP2" type="password" autocomplete="new-password"></label>
         <span class="muted" style="font-size:.78rem">Usa la misma contraseña en todos tus dispositivos. Si la olvidas, los datos sincronizados no se pueden recuperar (tus copias de seguridad sí).</span>
         <div class="acts"><button type="button" class="btn small" id="syOn">Activar sincronización</button></div>
+        <p class="err" id="syErr" role="alert" style="font-weight:600"></p>
       </div>
       <div id="syncActive" hidden class="acts"><button type="button" class="btn small" id="syNow">Sincronizar ahora</button><button type="button" class="btn small ghost" id="syOff">Desactivar en este dispositivo</button></div>
       <div id="syOffConfirm" class="banner" hidden></div>
@@ -249,7 +250,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="recDia">Día del mes para pasar al Excel</label><input id="recDia" type="number" min="1" max="31" inputmode="numeric"></div>
     <p class="err" id="cfgErr" role="alert"></p>
     <button class="btn" id="cfgSave">Guardar ajustes</button>
-    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 9</p>
+    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 10</p>
   </section>
 </div>
 
@@ -707,14 +708,14 @@ async function initSync(){try{const c=JSON.parse(localStorage.getItem(SYNC_LS)||
     syncCfg=c;const k=await idbGet("key");if(!k){setSyncMsg("Falta la clave en este dispositivo: desactiva y vuelve a activar la sincronización.");return;}
     syncKeyObj=k;syncTok=await decStr(k,c.tok);setSyncMsg(c.last?"Último sincronizado: "+new Date(c.last).toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"");syncNow();
   }catch(e){setSyncMsg("No se ha podido preparar la sincronización en este dispositivo. Desactívala y vuelve a activarla.");}}
-$("syOn").onclick=async()=>{const e=$("cfgErr");e.textContent="";const btn=$("syOn");
+$("syOn").onclick=async()=>{const e=$("syErr");e.textContent="";const btn=$("syOn");const show=t=>{e.textContent=t;e.scrollIntoView({block:"center",behavior:"smooth"});};
   const owner=$("syOwner").value.trim(),repo=$("syRepo").value.trim(),tok=$("syTok").value.trim(),p1=$("syP1").value,p2=$("syP2").value;
-  if(!/^[A-Za-z0-9-]+$/.test(owner)){e.textContent="Escribe tu usuario de GitHub.";return;}
-  if(!/^[A-Za-z0-9._-]+$/.test(repo)){e.textContent="Escribe el nombre del repositorio privado.";return;}
-  if(tok.length<20){e.textContent="Pega la clave de acceso de GitHub.";return;}
-  if(p1.length<10){e.textContent="La contraseña de cifrado necesita al menos 10 caracteres.";return;}
-  if(p1!==p2){e.textContent="Las dos contraseñas no coinciden.";return;}
-  if(!(window.crypto&&crypto.subtle&&window.indexedDB)){e.textContent="Este navegador no permite el cifrado. Usa Safari o Chrome actualizados.";return;}
+  if(!/^[A-Za-z0-9-]+$/.test(owner)){show("Escribe tu usuario de GitHub.");return;}
+  if(!/^[A-Za-z0-9._-]+$/.test(repo)){show("Escribe el nombre del repositorio privado.");return;}
+  if(tok.length<20){show("Pega la clave de acceso de GitHub (empieza por github_pat_).");return;}
+  if(p1.length<10){show("La contraseña de cifrado necesita al menos 10 caracteres.");return;}
+  if(p1!==p2){show("Las dos contraseñas de cifrado no coinciden.");return;}
+  if(!(window.crypto&&crypto.subtle&&window.indexedDB)){show("Este navegador no permite el cifrado. Usa Safari o Chrome actualizados.");return;}
   btn.disabled=true;btn.textContent="Comprobando…";
   try{const c={owner,repo};await ghRepo(c,tok);const rem=await readRemote(c,tok);let salt,key;
     if(rem.exists){salt=rem.file.kdf.salt;key=await deriveKey(p1,b64d(salt));try{await decStr(key,rem.file);}catch(x){throw new Error("La contraseña no es la que usaste en tu otro dispositivo.");}}
@@ -722,7 +723,7 @@ $("syOn").onclick=async()=>{const e=$("cfgErr");e.textContent="";const btn=$("sy
     await idbSet("key",key);const tokEnc=await encStr(key,tok);
     syncCfg={owner,repo,salt,tok:tokEnc,last:null};localStorage.setItem(SYNC_LS,JSON.stringify(syncCfg));syncKeyObj=key;syncTok=tok;
     ["syTok","syP1","syP2"].forEach(id=>$(id).value="");toast("Sincronización activada");await syncNow();
-  }catch(x){e.textContent=x&&x.message&&!/fetch|network|Load failed/i.test(x.message)?x.message:"No hay conexión con GitHub. Revisa internet e inténtalo de nuevo.";}
+  }catch(x){show(x&&x.message&&!/fetch|network|Load failed/i.test(x.message)?x.message:"No hay conexión con GitHub. Revisa internet e inténtalo de nuevo.");}
   finally{btn.disabled=false;btn.textContent="Activar sincronización";}};
 $("syNow").onclick=()=>syncNow();
 $("syOff").onclick=()=>{const c=$("syOffConfirm");c.hidden=false;c.innerHTML='<div>Se dejará de sincronizar <b>este dispositivo</b>. Tus datos se quedan aquí y en GitHub; para volver a activarla necesitarás tu clave de acceso y tu contraseña.</div>';

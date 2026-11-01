@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Mis Cuentas">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.github.com; manifest-src 'self'">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
@@ -152,6 +152,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
   <div class="banner" id="banner" hidden></div>
   <div class="accs" id="accs" aria-live="polite"></div>
   <div class="totals" id="totals"></div>
+  <div class="muted" id="syncLine" style="font-size:.78rem;margin-top:-8px" hidden></div>
 
   <section id="p-add" class="card" aria-label="Apuntar movimiento">
     <div class="modeseg" id="modeSeg" role="group" aria-label="Tipo de movimiento">
@@ -206,6 +207,22 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
 
   <section id="p-cfg" hidden class="card" aria-label="Ajustes">
     <h2>Ajustes</h2>
+    <div class="field" id="syncBox"><span class="lbl">Sincronizar móvil y Mac (cifrado)</span>
+      <p class="muted" id="syncStatus" style="margin:0;font-size:.85rem"></p>
+      <div id="syncForm" style="display:flex;flex-direction:column;gap:8px">
+        <span class="muted" style="font-size:.8rem">Tus datos se cifran en este dispositivo con tu contraseña antes de guardarse en tu repositorio privado de GitHub. Sin la contraseña nadie puede leerlos.</span>
+        <label class="muted" style="font-size:.8rem">Tu usuario de GitHub<input id="syOwner" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="muted" style="font-size:.8rem">Repositorio privado para los datos<input id="syRepo" type="text" value="mis-cuentas-datos" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="muted" style="font-size:.8rem">Clave de acceso de GitHub (empieza por github_pat_)<input id="syTok" type="password" autocomplete="off" spellcheck="false"></label>
+        <label class="muted" style="font-size:.8rem">Contraseña de cifrado (mínimo 10 caracteres)<input id="syP1" type="password" autocomplete="new-password"></label>
+        <label class="muted" style="font-size:.8rem">Repite la contraseña de cifrado<input id="syP2" type="password" autocomplete="new-password"></label>
+        <span class="muted" style="font-size:.78rem">Usa la misma contraseña en todos tus dispositivos. Si la olvidas, los datos sincronizados no se pueden recuperar (tus copias de seguridad sí).</span>
+        <div class="acts"><button type="button" class="btn small" id="syOn">Activar sincronización</button></div>
+      </div>
+      <div id="syncActive" hidden class="acts"><button type="button" class="btn small" id="syNow">Sincronizar ahora</button><button type="button" class="btn small ghost" id="syOff">Desactivar en este dispositivo</button></div>
+      <div id="syOffConfirm" class="banner" hidden></div>
+    </div>
+    <hr class="sep">
     <div class="banner" style="background:var(--accent-soft);color:var(--ink)"><div><b>¿Tienes un archivo de ajustes?</b> Cárgalo y todo se pone como en tu Excel, sin escribir nada.</div>
       <div class="acts"><button class="btn small" id="cfgLoadBtn">Cargar archivo de ajustes</button></div></div>
     <div class="field" id="saldoBox"><span class="lbl">Tu saldo actual</span>
@@ -232,7 +249,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="recDia">Día del mes para pasar al Excel</label><input id="recDia" type="number" min="1" max="31" inputmode="numeric"></div>
     <p class="err" id="cfgErr" role="alert"></p>
     <button class="btn" id="cfgSave">Guardar ajustes</button>
-    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 8</p>
+    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 9</p>
   </section>
 </div>
 
@@ -278,8 +295,18 @@ function load(){try{const raw=localStorage.getItem(KEY);if(raw){const x=JSON.par
   if(!SLOTS.includes(S.lastAcc))S.lastAcc="a1";}
 const nom=k=>(S.cfg.cuentas[k]&&S.cfg.cuentas[k].nombre)||k;
 const blkTitle=bk=>bk.accs.map(nom).join(" / ");
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));storageOk=true;return true;}catch(e){storageOk=false;toast("No se ha podido guardar en este móvil");return false;}}
+function save(){trackChanges();try{localStorage.setItem(KEY,JSON.stringify(S));storageOk=true;scheduleSync();return true;}catch(e){storageOk=false;toast("No se ha podido guardar en este móvil");return false;}}
+function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+/* ===== seguimiento de cambios para sincronizar ===== */
+let snap=null,snapCfg=null;
+const regKey=r=>{const o=Object.assign({},r);delete o.upd;return JSON.stringify(o);};
+function resetSnap(){snap={};S.regs.forEach(r=>snap[r.id]=regKey(r));snapCfg=JSON.stringify(S.cfg);}
+function trackChanges(){const now=new Date().toISOString();S.del=S.del||{};const cur={};
+  S.regs.forEach(r=>{const k=regKey(r);cur[r.id]=k;if(!r.upd)r.upd=r.creado||now;else if(snap&&snap[r.id]!==undefined&&snap[r.id]!==k)r.upd=now;});
+  if(snap)Object.keys(snap).forEach(id=>{if(!(id in cur))S.del[id]=now;});
+  const cj=JSON.stringify(S.cfg);if(snapCfg!==null&&snapCfg!==cj)S.cfgTs=now;snap=cur;snapCfg=cj;}
 load();
+S.del=S.del||{};if(!S.cfgTs&&JSON.stringify(S.cfg)!==JSON.stringify(mergeCfg({})))S.cfgTs="2001-01-01T00:00:00.000Z";resetSnap();
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
 const cfg=()=>S.cfg;
 
@@ -616,6 +643,95 @@ $("cfgSave").onclick=()=>{
   S.cfg=n;if(save()){vp=periodOf(todayISO());renderForm();renderAll();toast("Ajustes guardados");}
 };
 
+/* ===== sincronización cifrada (GitHub, repositorio privado) =====
+   - Cifrado AES-256-GCM en este dispositivo. Clave derivada de tu contraseña con PBKDF2-SHA256 (600.000 iteraciones).
+   - La contraseña no se guarda. La clave se guarda en este dispositivo como clave NO exportable (IndexedDB).
+   - La clave de acceso de GitHub se guarda cifrada con esa misma clave.
+   - A GitHub solo llega {sal, iv, texto cifrado}. */
+const SYNC_LS="misCuentas.sync",SYNC_PATH="datos-cifrados.json",KDF_ITER=600000;
+let syncCfg=null,syncKeyObj=null,syncTok=null,syncBusy=false,syncAgain=false,syncTimer=null,syncMsg="";
+const te=new TextEncoder(),td=new TextDecoder();
+const b64e=u8=>{let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s);};
+const b64d=b=>Uint8Array.from(atob(b),c=>c.charCodeAt(0));
+const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
+function stable(v){if(Array.isArray(v))return"["+v.map(stable).join(",")+"]";if(v&&typeof v==="object")return"{"+Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>JSON.stringify(k)+":"+stable(v[k])).join(",")+"}";return JSON.stringify(v===undefined?null:v);}
+async function deriveKey(pass,salt){const base=await crypto.subtle.importKey("raw",te.encode(pass),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:KDF_ITER,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);}
+async function encStr(key,str){const iv=rnd(12);const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,te.encode(str)));return{iv:b64e(iv),ct:b64e(ct)};}
+async function decStr(key,o){const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:b64d(o.iv)},key,b64d(o.ct));return td.decode(pt);}
+/* IndexedDB para la clave no exportable */
+function idbOpen(){return new Promise((res,rej)=>{const q=indexedDB.open("misCuentasSync",1);q.onupgradeneeded=()=>q.result.createObjectStore("k");q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});}
+async function idbDo(mode,fn){const d=await idbOpen();return new Promise((res,rej)=>{const tx=d.transaction("k",mode),st=tx.objectStore("k"),q=fn(st);tx.oncomplete=()=>res(q&&q.result);tx.onerror=()=>rej(tx.error);});}
+const idbGet=k=>idbDo("readonly",st=>st.get(k)),idbSet=(k,v)=>idbDo("readwrite",st=>st.put(v,k)),idbDel=k=>idbDo("readwrite",st=>st.delete(k));
+/* API de GitHub */
+function ghHeaders(tok,json){const h={"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};if(json)h["Content-Type"]="application/json";return h;}
+const repoUrl=c=>"https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo);
+function ghFile(c,tok,method,body){return fetch(repoUrl(c)+"/contents/"+SYNC_PATH,{method,cache:"no-store",headers:ghHeaders(tok,!!body),body:body?JSON.stringify(body):undefined});}
+async function ghRepo(c,tok){const r=await fetch(repoUrl(c),{cache:"no-store",headers:ghHeaders(tok)});if(r.status===401)throw new Error("La clave de acceso de GitHub no es válida o ha caducado.");
+  if(!r.ok)throw new Error("No encuentro el repositorio "+c.owner+"/"+c.repo+" o la clave no tiene acceso a él.");const j=await r.json();if(j.private!==true)throw new Error("Por seguridad, el repositorio tiene que ser PRIVADO. Cámbialo en GitHub y vuelve a intentarlo.");}
+async function readRemote(c,tok){const r=await ghFile(c,tok,"GET");if(r.status===404)return{exists:false};if(r.status===401)throw new Error("La clave de acceso de GitHub no es válida o ha caducado.");
+  if(!r.ok)throw new Error("GitHub ha respondido con un error ("+r.status+"). Prueba más tarde.");const j=await r.json();
+  let file;try{file=JSON.parse(atob((j.content||"").replace(/\s/g,"")));}catch(e){throw new Error("El archivo de datos de GitHub está dañado.");}
+  if(!file||file.app!=="mis-cuentas-sync")throw new Error("El archivo de datos de GitHub no es de Mis Cuentas.");return{exists:true,sha:j.sha,file};}
+/* datos que se sincronizan */
+function payload(){return{v:1,regs:S.regs.slice().sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0),del:S.del||{},cfg:S.cfg,cfgTs:S.cfgTs||"",lastExport:S.lastExport||null,lastBackup:S.lastBackup||null};}
+const mx=(a,b)=>(a||"")>(b||"")?a:b;
+function mergeRemote(R){const del=Object.assign({},R.del||{});Object.keys(S.del||{}).forEach(k=>{del[k]=mx(del[k],S.del[k]);});
+  const t=r=>r.upd||r.creado||"";const map={};(R.regs||[]).concat(S.regs).forEach(r=>{if(!r||!r.id)return;const c=map[r.id];if(!c||t(c)<t(r))map[r.id]=r;});
+  S.regs=Object.values(map).filter(r=>!(del[r.id]&&del[r.id]>=t(r)));S.del=del;
+  if(R.cfg&&(R.cfgTs||"")>=(S.cfgTs||"")){S.cfg=mergeCfg(R.cfg);S.cfgTs=R.cfgTs||"";}
+  S.lastExport=mx(S.lastExport,R.lastExport)||null;S.lastBackup=mx(S.lastBackup,R.lastBackup)||null;}
+function setSyncMsg(t){syncMsg=t;const l=$("syncLine");if(l){l.textContent=t?"☁ "+t:"";l.hidden=!t;}const st=$("syncStatus");if(st)st.textContent=syncCfg?("Activada con "+syncCfg.owner+"/"+syncCfg.repo+". "+(t||"")):"Desactivada. Tus datos solo están en este dispositivo.";
+  if($("syncForm"))$("syncForm").hidden=!!syncCfg;if($("syncActive"))$("syncActive").hidden=!syncCfg;}
+function scheduleSync(){if(!syncCfg||!syncKeyObj)return;clearTimeout(syncTimer);syncTimer=setTimeout(syncNow,1500);}
+async function syncNow(){if(!syncCfg||!syncKeyObj||!syncTok)return;if(syncBusy){syncAgain=true;return;}syncBusy=true;setSyncMsg("Sincronizando…");
+  try{for(let i=0;i<4;i++){
+      const rem=await readRemote(syncCfg,syncTok);let remoteStr=null;
+      if(rem.exists){let txt;try{txt=await decStr(syncKeyObj,rem.file);}catch(e){throw new Error("No se pueden descifrar los datos de GitHub: la contraseña de este dispositivo no coincide. Desactiva y vuelve a activar con tu contraseña.");}
+        remoteStr=txt;mergeRemote(JSON.parse(txt));}
+      saveLocal();resetSnap();
+      const mine=stable(payload());
+      if(remoteStr!==null&&stable(JSON.parse(remoteStr))===mine){break;}
+      const enc=await encStr(syncKeyObj,mine);
+      const file={app:"mis-cuentas-sync",v:1,kdf:{alg:"PBKDF2-SHA256",iter:KDF_ITER,salt:syncCfg.salt},cipher:"AES-256-GCM",iv:enc.iv,ct:enc.ct};
+      const body={message:"Sincronización cifrada",content:btoa(JSON.stringify(file))};if(rem.exists)body.sha=rem.sha;
+      const w=await ghFile(syncCfg,syncTok,"PUT",body);
+      if(w.ok)break;if(w.status===409||w.status===422)continue;if(w.status===401)throw new Error("La clave de acceso de GitHub no es válida o ha caducado.");
+      throw new Error("GitHub no ha guardado los datos ("+w.status+"). Se reintentará.");}
+    syncCfg.last=new Date().toISOString();localStorage.setItem(SYNC_LS,JSON.stringify(syncCfg));
+    setSyncMsg("Sincronizado a las "+new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"}));
+    vp=vp;renderForm();renderAll();
+  }catch(e){setSyncMsg(e&&e.message&&!/fetch|network|Load failed/i.test(e.message)?e.message:"Sin conexión. Se sincronizará cuando vuelvas a tener internet.");}
+  finally{syncBusy=false;if(syncAgain){syncAgain=false;syncNow();}}}
+async function initSync(){try{const c=JSON.parse(localStorage.getItem(SYNC_LS)||"null");if(!c){setSyncMsg("");return;}
+    syncCfg=c;const k=await idbGet("key");if(!k){setSyncMsg("Falta la clave en este dispositivo: desactiva y vuelve a activar la sincronización.");return;}
+    syncKeyObj=k;syncTok=await decStr(k,c.tok);setSyncMsg(c.last?"Último sincronizado: "+new Date(c.last).toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"");syncNow();
+  }catch(e){setSyncMsg("No se ha podido preparar la sincronización en este dispositivo. Desactívala y vuelve a activarla.");}}
+$("syOn").onclick=async()=>{const e=$("cfgErr");e.textContent="";const btn=$("syOn");
+  const owner=$("syOwner").value.trim(),repo=$("syRepo").value.trim(),tok=$("syTok").value.trim(),p1=$("syP1").value,p2=$("syP2").value;
+  if(!/^[A-Za-z0-9-]+$/.test(owner)){e.textContent="Escribe tu usuario de GitHub.";return;}
+  if(!/^[A-Za-z0-9._-]+$/.test(repo)){e.textContent="Escribe el nombre del repositorio privado.";return;}
+  if(tok.length<20){e.textContent="Pega la clave de acceso de GitHub.";return;}
+  if(p1.length<10){e.textContent="La contraseña de cifrado necesita al menos 10 caracteres.";return;}
+  if(p1!==p2){e.textContent="Las dos contraseñas no coinciden.";return;}
+  if(!(window.crypto&&crypto.subtle&&window.indexedDB)){e.textContent="Este navegador no permite el cifrado. Usa Safari o Chrome actualizados.";return;}
+  btn.disabled=true;btn.textContent="Comprobando…";
+  try{const c={owner,repo};await ghRepo(c,tok);const rem=await readRemote(c,tok);let salt,key;
+    if(rem.exists){salt=rem.file.kdf.salt;key=await deriveKey(p1,b64d(salt));try{await decStr(key,rem.file);}catch(x){throw new Error("La contraseña no es la que usaste en tu otro dispositivo.");}}
+    else{salt=b64e(rnd(16));key=await deriveKey(p1,b64d(salt));}
+    await idbSet("key",key);const tokEnc=await encStr(key,tok);
+    syncCfg={owner,repo,salt,tok:tokEnc,last:null};localStorage.setItem(SYNC_LS,JSON.stringify(syncCfg));syncKeyObj=key;syncTok=tok;
+    ["syTok","syP1","syP2"].forEach(id=>$(id).value="");toast("Sincronización activada");await syncNow();
+  }catch(x){e.textContent=x&&x.message&&!/fetch|network|Load failed/i.test(x.message)?x.message:"No hay conexión con GitHub. Revisa internet e inténtalo de nuevo.";}
+  finally{btn.disabled=false;btn.textContent="Activar sincronización";}};
+$("syNow").onclick=()=>syncNow();
+$("syOff").onclick=()=>{const c=$("syOffConfirm");c.hidden=false;c.innerHTML='<div>Se dejará de sincronizar <b>este dispositivo</b>. Tus datos se quedan aquí y en GitHub; para volver a activarla necesitarás tu clave de acceso y tu contraseña.</div>';
+  const a=document.createElement("div");a.className="acts";const y=document.createElement("button");y.className="btn small danger";y.textContent="Sí, desactivar";
+  y.onclick=async()=>{try{await idbDel("key");}catch(x){}localStorage.removeItem(SYNC_LS);syncCfg=null;syncKeyObj=null;syncTok=null;c.hidden=true;setSyncMsg("");toast("Sincronización desactivada en este dispositivo");};
+  const n=document.createElement("button");n.className="btn small ghost";n.textContent="Cancelar";n.onclick=()=>{c.hidden=true;};a.append(y,n);c.appendChild(a);};
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncNow();});
+window.addEventListener("online",()=>syncNow());
+
 /* ===== navegación ===== */
 function showTab(p){document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected",String(x.dataset.p===p)));
   ["p-add","p-list","p-xls","p-cfg"].forEach(id=>$(id).hidden=id!==p);if(p==="p-cfg")fillCfg();renderBanner();
@@ -625,7 +741,7 @@ $("mPrev").onclick=()=>{vp--;openId=null;renderAll();};
 $("mNext").onclick=()=>{vp++;openId=null;renderAll();};
 function renderAll(){renderSummary();renderList();renderXls();renderBanner();}
 window.addEventListener("storage",e=>{if(e.key===KEY){load();renderForm();renderAll();}});
-renderForm();renderAll();fillCfg();
+renderForm();renderAll();fillCfg();initSync();
 
 /* actualizaciones: busca versión nueva al abrir y al volver a la app; si la hay, recarga una vez */
 if("serviceWorker" in navigator&&location.protocol==="https:"){

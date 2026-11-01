@@ -1,6 +1,6 @@
 // Guarda la app en el móvil para que funcione sin internet. No toca tus datos.
 // Versión 3: al abrir, siempre pide la última versión a internet (sin usar copias viejas).
-const CACHE = "mis-cuentas-v8";
+const CACHE = "mis-cuentas-v9";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -12,6 +12,8 @@ self.addEventListener("activate", e => {
 // Primero internet, saltándose la caché del navegador; si no hay conexión, la copia guardada.
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
+  // Solo los archivos de la propia app; nunca se guardan respuestas de GitHub ni de otros sitios.
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   const fresh = e.request.mode === "navigate" ? new Request(e.request.url, { cache: "no-store" }) : new Request(e.request, { cache: "no-cache" });
   e.respondWith(
     fetch(fresh).then(res => {

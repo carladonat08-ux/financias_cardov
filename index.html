@@ -232,7 +232,7 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
     <div class="field"><label class="lbl" for="recDia">Día del mes para pasar al Excel</label><input id="recDia" type="number" min="1" max="31" inputmode="numeric"></div>
     <p class="err" id="cfgErr" role="alert"></p>
     <button class="btn" id="cfgSave">Guardar ajustes</button>
-    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 7</p>
+    <p class="muted" style="margin:0;font-size:.82rem">Tus datos se guardan solo en este navegador de este móvil. No se envían a ningún sitio. · Versión 8</p>
   </section>
 </div>
 
@@ -290,7 +290,7 @@ const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,"0");
 const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 const todayISO=()=>iso(new Date());
-const eur=n=>(n||0).toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
+const eur=n=>{const v=Math.round((Number(n)||0)*100)/100,a=Math.abs(v).toFixed(2).split(".");return (v<0?"-":"")+a[0].replace(/\B(?=(\d{3})+(?!\d))/g,".")+","+a[1]+" €";};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmtDate=s=>{const [y,m,d]=s.split("-");return d+"/"+m+"/"+y;};
 const uid=()=>(crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
@@ -437,7 +437,7 @@ function renderBanner(){
   if(S.regs.length&&((now>=dueThis&&!after(S.lastBackup,dueThis))||(dB!==null&&dB>40)))msgs.push(dB===null?"Haz también la copia de seguridad del mes.":"Haz también la copia de seguridad del mes (la última fue hace "+dB+" días).");
   if(!msgs.length){b.hidden=true;return;}
   b.innerHTML='<div>'+msgs.join("<br>")+'</div>';
-  const acts=document.createElement("div");acts.className="acts";const go=document.createElement("button");go.className="btn small";go.textContent="Ir a Excel";go.onclick=()=>showTab("p-xls");acts.appendChild(go);b.appendChild(acts);
+  const acts=document.createElement("div");acts.className="acts";const go=document.createElement("button");go.className="btn small";go.textContent="Ir a Excel";go.onclick=()=>showTab("p-xls");if($("p-xls").hidden){acts.appendChild(go);b.appendChild(acts);}
   b.hidden=false;
 }
 
@@ -492,7 +492,7 @@ function pendOf(bk){const rows=[];
     }else if(!r.exportado&&bk.accs.includes(r.cuenta))rows.push({ref:r,side:null,fecha:r.fecha,creado:r.creado,concepto:r.concepto,categoria:r.categoria,cuenta:r.cuenta,importe:r.importe});
   });
   return rows.sort(sortAsc);}
-const clean=s=>String(s||"").replace(/[\t\r\n]+/g," ");
+const clean=s=>String(s||"").replace(/[\t\r\n]+/g," ").trim().replace(/^[=+\-@]+\s*/,"");
 const amt=n=>(Number(n)||0).toFixed(2).replace(".",cfg().dec||",");
 function tsv(bk,rows){return rows.map(r=>bk.key==="B3"?[fmtDate(r.fecha),clean(r.concepto),r.categoria,nom(r.cuenta),amt(r.importe)].join("\t"):[fmtDate(r.fecha),clean(r.concepto),r.categoria,amt(r.importe)].join("\t")).join("\r\n");}
 function renderXls(){
@@ -618,7 +618,8 @@ $("cfgSave").onclick=()=>{
 
 /* ===== navegación ===== */
 function showTab(p){document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected",String(x.dataset.p===p)));
-  ["p-add","p-list","p-xls","p-cfg"].forEach(id=>$(id).hidden=id!==p);if(p==="p-cfg")fillCfg();window.scrollTo(0,0);}
+  ["p-add","p-list","p-xls","p-cfg"].forEach(id=>$(id).hidden=id!==p);if(p==="p-cfg")fillCfg();renderBanner();
+  if(p==="p-add")window.scrollTo(0,0);else requestAnimationFrame(()=>{const el=$(p),y=el.getBoundingClientRect().top+window.scrollY-12;window.scrollTo(0,Math.max(0,y));});}
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.p));
 $("mPrev").onclick=()=>{vp--;openId=null;renderAll();};
 $("mNext").onclick=()=>{vp++;openId=null;renderAll();};
